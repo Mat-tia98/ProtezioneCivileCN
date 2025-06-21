@@ -23,7 +23,18 @@ async def risposta(update: Update, context: ContextTypes.DEFAULT_TYPE):
     risposte[query.from_user.id] = query.data
     await query.edit_message_text(f"Hai risposto: {query.data}")
 
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    volontario_id = user.id
+    nome = user.full_name
+    await update.message.reply_text("Registrazione completata. Riceverai le allerte di emergenza.")
+    
+    # Salva su file
+    with open("volontari.txt", "a") as f:
+        f.write(f"{volontario_id}  # {nome}\n")
+
 app = Application.builder().token(TOKEN).build()
 app.add_handler(CommandHandler("allerta", allerta))
 app.add_handler(CallbackQueryHandler(risposta))
+app.add_handler(CommandHandler("start", start))
 app.run_polling()
