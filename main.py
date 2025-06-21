@@ -1,19 +1,20 @@
 import os
 import requests
+import asyncio
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-SHEETDB_URL = "https://sheetdb.io/api/v1/17cwkibodi8t9" 
-
+SHEETDB_URL = "https://sheetdb.io/api/v1/17cwkibodi8t9"  # ← metti il tuo link
 TOKEN = os.getenv("BOT_TOKEN")
+
 risposte = {}
+admin_ids = {5560352330}  # ⬅️ sostituisci con i tuoi ID Telegram
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     volontario_id = user.id
     nome = user.full_name
 
-    # Registra l’utente su Google Sheet via SheetDB
     data = {
         "data": {
             "id": str(volontario_id),
@@ -27,13 +28,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("✅ Registrazione completata. Ora riceverai le allerte.")
             print(f"Registrato: {nome} - ID: {volontario_id}")
         else:
-            await update.message.reply_text("⚠️ Errore durante la registrazione. Riprova più tardi.")
+            await update.message.reply_text("⚠️ Errore durante la registrazione.")
             print(f"Errore registrazione: {response.text}")
     except Exception as e:
         print(f"Errore SheetDB: {e}")
-        await update.message.reply_text("⚠️ Errore di connessione. Contatta l’amministratore.")
+        await update.message.reply_text("⚠️ Errore di connessione.")
 
 async def allerta(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in admin_ids:
+        await update.message.reply_text("⛔ Non hai i permessi per inviare l’allerta.")
+        return
+
     try:
         response = requests.get(SHEETDB_URL)
         json_data = response.json()
@@ -50,10 +56,22 @@ async def allerta(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         for vid in ids:
             await context.bot.send_message(chat_id=vid, text="🚨 CHIAMATA URGENTE 🚨", reply_markup=markup)
+            asyncio.create_task(notifica_ripetuta(context, vid, markup))
 
     except Exception as e:
         print(f"Errore durante allerta: {e}")
-        await update.message.reply_text("⚠️ Impossibile inviare l’allerta. Verifica la connessione con SheetDB.")
+        await update.message.reply_text("⚠️ Errore durante l’invio dell’allerta.")
+
+async def notifica_ripetuta(context, user_id, markup):
+    for i in range(6):  # 6 ripetizioni ogni 10 secondi = 1 minuto
+        await asyncio.sleep(10)
+        if risposte.get(user_id) is None:
+            try:
+                await context.bot.send_message(chat_id=user_id, text="🔔 RISPOSTA URGENTE RICHIESTA!", reply_markup=markup)
+            except Exception as e:
+                print(f"Errore notifica ripetuta a {user_id}: {e}")
+        else:
+            break
 
 async def risposta(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
