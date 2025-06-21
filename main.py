@@ -1,8 +1,11 @@
 import os
 import requests
 import asyncio
+import logging
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+
+logging.basicConfig(level=logging.INFO)
 
 SHEETDB_URL = "https://sheetdb.io/api/v1/17cwkibodi8t9"  # ← metti il tuo link
 TOKEN = os.getenv("BOT_TOKEN")
@@ -15,23 +18,29 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     volontario_id = user.id
     nome = user.full_name
 
-    data = {
-        "data": {
-            "id": str(volontario_id),
-            "nome": nome
-        }
-    }
-
     try:
+        # Verifica se l'utente è già registrato
+        check = requests.get(f"{SHEETDB_URL}/search?id={volontario_id}")
+        if check.status_code == 200 and check.json():
+            await update.message.reply_text("✅ Sei già registrato per ricevere le allerte.")
+            return
+
+        # Altrimenti registra il nuovo utente
+        data = {
+            "data": {
+                "id": str(volontario_id),
+                "nome": nome
+            }
+        }
         response = requests.post(SHEETDB_URL, json=data)
         if response.status_code in [200, 201]:
             await update.message.reply_text("✅ Registrazione completata. Ora riceverai le allerte.")
-            print(f"Registrato: {nome} - ID: {volontario_id}")
+            logging.info(f"Registrato: {nome} - ID: {volontario_id}")
         else:
             await update.message.reply_text("⚠️ Errore durante la registrazione.")
-            print(f"Errore registrazione: {response.text}")
+            logging.error(f"Errore registrazione: {response.text}")
     except Exception as e:
-        print(f"Errore SheetDB: {e}")
+        logging.error(f"Errore SheetDB: {e}")
         await update.message.reply_text("⚠️ Errore di connessione.")
 
 async def allerta(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -59,7 +68,7 @@ async def allerta(update: Update, context: ContextTypes.DEFAULT_TYPE):
             asyncio.create_task(notifica_ripetuta(context, vid, markup))
 
     except Exception as e:
-        print(f"Errore durante allerta: {e}")
+        logging.error(f"Errore durante allerta: {e}")
         await update.message.reply_text("⚠️ Errore durante l’invio dell’allerta.")
 
 async def notifica_ripetuta(context, user_id, markup):
@@ -69,7 +78,7 @@ async def notifica_ripetuta(context, user_id, markup):
             try:
                 await context.bot.send_message(chat_id=user_id, text="🔔 RISPOSTA URGENTE RICHIESTA!", reply_markup=markup)
             except Exception as e:
-                print(f"Errore notifica ripetuta a {user_id}: {e}")
+                logging.error(f"Errore notifica ripetuta a {user_id}: {e}")
         else:
             break
 
@@ -79,8 +88,30 @@ async def risposta(update: Update, context: ContextTypes.DEFAULT_TYPE):
     risposte[query.from_user.id] = query.data
     await query.edit_message_text(f"Hai risposto: {query.data}")
 
+async def mostra_risposte(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in admin_ids:
+        await update.message.reply_text("⛔ Non hai i permessi per visualizzare le risposte.")
+        return
+
+    if not risposte:
+        await update.message.reply_text("⚠️ Nessuna allerta attiva.")
+        return
+
+    confermati = [str(uid) for uid, r in risposte.items() if r == "confermo"]
+    rifiutati = [str(uid) for uid, r in risposte.items() if r == "rifiuto"]
+    nessuna = [str(uid) for uid, r in risposte.items() if r is None]
+
+    testo = "📊 **Risposte alla chiamata:**\n"
+    testo += f"\n✅ Confermati ({len(confermati)}):\n" + "\n".join(confermati) if confermati else "\n✅ Nessun confermato"
+    testo += f"\n\n❌ Rifiutati ({len(rifiutati)}):\n" + "\n".join(rifiutati) if rifiutati else "\n❌ Nessun rifiutato"
+    testo += f"\n\n❓ Nessuna risposta ({len(nessuna)}):\n" + "\n".join(nessuna) if nessuna else "\n❓ Tutti hanno risposto"
+
+    await update.message.reply_text(testo, parse_mode="Markdown")
+
 app = Application.builder().token(TOKEN).build()
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("allerta", allerta))
+app.add_handler(CommandHandler("risposte", mostra_risposte))
 app.add_handler(CallbackQueryHandler(risposta))
 app.run_polling()
