@@ -1,0 +1,29 @@
+import os
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+
+TOKEN = os.getenv("BOT_TOKEN")
+volontari = [123456789]  # Sostituisci con gli ID reali dei volontari
+risposte = {}
+
+async def allerta(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global risposte
+    risposte = {v: None for v in volontari}
+    keyboard = [[
+        InlineKeyboardButton("✅ Confermo", callback_data='confermo'),
+        InlineKeyboardButton("❌ Rifiuto", callback_data='rifiuto')
+    ]]
+    markup = InlineKeyboardMarkup(keyboard)
+    for vid in volontari:
+        await context.bot.send_message(chat_id=vid, text="🚨 CHIAMATA URGENTE 🚨", reply_markup=markup)
+
+async def risposta(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    risposte[query.from_user.id] = query.data
+    await query.edit_message_text(f"Hai risposto: {query.data}")
+
+app = Application.builder().token(TOKEN).build()
+app.add_handler(CommandHandler("allerta", allerta))
+app.add_handler(CallbackQueryHandler(risposta))
+app.run_polling()
