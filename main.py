@@ -3,7 +3,7 @@ import requests
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-SHEETDB_URL = https://sheetdb.io/api/v1/17cwkibodi8t9
+SHEETDB_URL = "https://sheetdb.io/api/v1/17cwkibodi8t9" 
 
 TOKEN = os.getenv("BOT_TOKEN")
 risposte = {}
